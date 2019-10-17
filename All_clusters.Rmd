@@ -1,0 +1,372 @@
+---
+title: "All clusters"
+author: "Anna V. Protasio"
+date: "16/10/2019"
+output:
+  html_document:
+    toc: true
+    toc_float:
+      collapsed: false
+---
+
+<!-- Load libraries. -->
+
+```{r, echo=FALSE, include=FALSE}
+rm(list=ls())
+
+library(treeio)
+library(ggtree)
+library(cowplot)
+library(seqinr)
+library(WriteXLS)
+library(ggplot2)
+library(dplyr)
+library(knitr)
+library(viridis)
+library(gridExtra)
+library(grid)
+library(kableExtra)
+
+# define "not in" function
+'%!in%' <- function(x,y)!('%in%'(x,y))
+
+knitr::opts_chunk$set(echo = F, warning = FALSE)
+
+# defines three residue's of interest
+q1 = "31"
+q2 = "33"
+q3 = "128"
+```
+
+In this section we outline the analyses done to investigate:
+
+1. Frquencies of individual residues in VIF protein at positions `r q1`, `r q2` and `r q3`.
+2. Frquencies of paires of residues at positions `r q1` and `r q3`.
+3. Phylogenetic distribution of proteins with different (and selected) residue combinations.
+
+# Requirements.
+
+- R
+- various R packaged (see SessionInfo at the end)
+- ClustalO (http://www.clustal.org/omega/)
+
+# Data aquisition.
+
+The **Los Alamos** database was queried to obtain the alignments for the VIF sequences using the following parameters:
+
+```
+https://www.hiv.lanl.gov/cgi-bin/NEWALIGN/align.cgi
+
+Alignment type: Web alignment (all complete sequences)
+Year: 2018
+Organism: HIV-1/SIVcpz
+DNA/Protein: PRO
+Region: vif
+Subtype: NO Recombinants (A-K)
+Format: FASTA
+Alignment ID : 118AP15
+Number of sequences: 3412
+```
+
+```{r}
+# load file with all sequences for VIF
+all.file = seqinr::read.fasta(file = "data/all_seqs/webaln_LosAlamos/HIV1_ALL_2018_vif_PRO.fasta" , seqtype = "AA")
+```
+
+# Calculate frequency of individual residues. 
+
+We use the alignments to pull the resodues in positions `r q1`, `r q2` and `r q3`. We then calculate the frequencies at which the residues occur at a given position in all VIF sequences. Only the three most abundant residues in each position individually listed, the rest are collapsed in the category "other". The frequencies are represented in the table and bar plot below. 
+
+```{r, ind_freq}
+# Notice that the residue numbering is different than estipulated earlier. This is due to the position of the residues in the alignment file, which is different to the reference sequence. We checked this by using weblogos.
+
+# collect residues frequencies. Only the three most abundant residues are kept for identity, the rest are collapsed in "other"
+
+r32 = c() # position 32 of the alignment, corresponding to 31 of the reference sequence
+for ( i in 1:length(all.file)) { r32 = c(r32, (all.file[[i]][32]))}
+r32 = sort(table(r32),decreasing = T)
+r32.v = as.vector(r32)[1:3]
+r32.v = c(r32.v, sum(r32[4:length(r32)]))
+r32.p = round(r32.v/sum(r32.v), digits = 3)
+#names(r32.v) = c(names(r32)[1:3], "other")
+
+r34= c() # position 34 of the alignment, corresponding to 33 of the reference sequence
+for ( i in 1:length(all.file)) { r34 = c(r34, (all.file[[i]][34]))}
+r34 = sort(table(r34),decreasing = T)
+r34.v = as.vector(r34)[1:3]
+r34.v = c(r34.v, sum(r34[4:length(r34)]))
+r34.p = round(r34.v/sum(r34.v), digits = 3)
+#names(r34.v) = c(names(r34)[1:3], "other")
+
+r136= c() # position 136 of the alignment, corresponding to 128 of the reference sequence
+for ( i in 1:length(all.file)) { r136 = c(r136, (all.file[[i]][136]))}
+r136 = sort(table(r136),decreasing = T)
+r136.v = as.vector(r136)[1:3]
+r136.v = c(r136.v, sum(r136[4:length(r136)]))
+r136.p = round(r136.v/sum(r136.v), digits = 3)
+#names(r136.v) = c(names(r136)[1:3], "other")
+
+# create dataframe with all 
+mm = data.frame(
+  pos = c(rep("31",4), rep("33",4), rep("128",4))
+  , res = c(names(r32)[1:3], "other", names(r34)[1:3], "other",names(r136)[1:3], "other")
+  , freq = c(r32.v , r34.v, r136.v)
+  , perc = c(r32.p , r34.p, r136.p)
+  )
+
+mm$res = factor(mm$res, c("I","V","K","R","G","other"))
+mm$pos = factor(mm$pos, c("31","33","128"))
+```
+
+
+```{r, table1, results= 'asis'}
+kable(mm, "html") %>%
+  kable_styling(full_width = F, position = "float_left")
+```
+
+```{r, barplot1, fig.height=5, fig.width=5, fig.align="right"}
+mm.plot = ggplot(data = mm, aes(x = pos, y = freq, fill = res)) + 
+  geom_bar(position = "fill", colour = "black", stat = "identity") +
+  labs(y = "Proportion") +
+  theme(axis.title = element_text(size = 23)
+        , axis.text = element_text(size = 15, face = "bold", colour = "black")
+        , axis.title.x = element_blank()
+        , legend.title = element_text(size = 15, face = "bold")
+        , legend.text = element_text(size = 13, face = "bold")
+        , legend.spacing.y = unit(0.1, "cm")
+        , legend.key.size = unit(0.8, "cm")
+  ) +
+  scale_fill_viridis("Amino acid", discrete = T, option = "B", direction = -1)
+
+mm.plot
+
+```
+
+<br/><br/>
+
+# Calculate frequency of pairs of residues.
+
+We use the alignments to find which the residues where found at positions `r q1` and `r q3` for VIF sequence in each isolate. We then calculate the frequencies at which pairs of residues occur. Note that only selected pairs of amino acids are shown and the rest are collapsed in the category "other". The frequencies are represented in the table and pie charts below.
+
+```{r, comb_freq}
+# this are the residue pairs that we are interested in.
+keep = c("II","VI","IR","VR")
+# collect pairs of r1 and r2 residues 
+r1 = 32
+r2 = 136
+v = c()
+for ( i in 1:length(all.file)) { v = c(v, paste(all.file[[i]][r1],all.file[[i]][r2], sep="")) }
+# all other pairs that are not in keep are plced in a category "other"
+v[v %!in% keep] = "other"
+all = v
+```
+
+```{r, table2, results= "asis"}
+# table
+all.table = data.frame( 
+  res = names(table(all))
+  , freq = as.numeric(table(all))
+  , prec = round(as.numeric(table(all))/sum(table(all)), digits = 3)
+  )
+
+kable(all.table, "html") %>%
+  kable_styling(full_width = F, position = "float_left")
+```
+
+```{r, piechart1, fig.height=5, fig.width=5, fig.align="right"}
+## make plot piechart
+
+# prepare data
+p1 = as.data.frame(table(all))
+p1$all = factor(p1$all,levels(p1$all)[c(1,2,4,5,3)])
+p1$perc = p1$Freq*100/sum(p1$Freq)
+
+# define function for blank_theme for plot
+blank_theme <- theme_minimal()+
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.border = element_blank(),
+    panel.grid=element_blank(),
+    axis.ticks = element_blank(),
+    plot.title=element_text(size=14, face="bold")
+  )
+
+# make plot
+p1.plot  = ggplot(data = p1, aes(x = "", y = Freq, fill = all)) + 
+  geom_bar(position = "fill", colour = "black", stat = "identity") +
+  labs(y = "Proportion", x = "VIF sequences") +
+  theme(axis.title = element_text(size = 15)
+        , plot.title = element_text(hjust = 0.5, size = 25)
+        , axis.text.x = element_text(size = 15)
+        , axis.text.y = element_text(size = 12)
+        #, axis.title.x = element_blank()
+        ) + 
+  scale_fill_viridis("Amino acids", discrete = T, direction = -1)
+
+
+# make it into a pie chart
+p1.plot.pie = p1.plot + coord_polar("y", start=0) +
+  blank_theme +
+  theme(axis.text.x=element_blank()
+        , legend.title = element_text(size = 13, face = "bold")
+        , legend.text = element_text(size = 11, face = "bold")
+        #, legend.spacing.y = unit(0.1, "cm")
+        #, legend.key.size = unit(0.8, "cm")
+        ) +
+  geom_text(aes(x = rep(1.7,5), y = c(0.83, 0.63, 0.15,0.45, 0.32) #insert coords manually
+                , label = paste(round(p1$perc, digits = 1), "%",sep=""))
+            , size=5
+  )
+
+p1.plot.pie 
+
+```
+
+# Trees
+
+We now look at the pylogenetic distribution of residue combinations. In order to assess whether there is anything special about the way VIF proteins relate to each other we will compare them with other proteins, namely NEF, GAG and ENV. Alignments for NEF, GAG and ENV are retrieve from *Los Alamos* HIV database as decribed in **Data aquisition**. The details of the alignments are found below. 
+
+```
+Alignment type: Web alignment (all complete sequences)
+Year: 2018
+Organism: HIV-1/SIVcpz
+DNA/Protein: PRO
+Region: nef
+Subtype: NO Recombinants (A-K)
+Format: FASTA
+Alignment ID : 118AP7
+Number of sequences: 5340
+
+Alignment type: Web alignment (all complete sequences)
+Year: 2018
+Organism: HIV-1/SIVcpz
+DNA/Protein: PRO
+Region: env
+Subtype: NO Recombinants (A-K)
+Format: FASTA
+Alignment ID : 118AP2
+Number of sequences: 4760
+
+Alignment type: Web alignment (all complete sequences)
+Year: 2018
+Organism: HIV-1/SIVcpz
+DNA/Protein: PRO
+Region: gag
+Subtype: NO Recombinants (A-K)
+Format: FASTA
+Alignment ID : 118AP4
+Number of sequences: 6381
+```
+
+To provide an accurate comparison across sequenes, we only take into consideration isolates that have a representative in each protein file. In consequence, all the trees have the same number of sequences.
+
+Trees' were calculated using Clustal Omega (https://www.ebi.ac.uk/Tools/msa/clustalo/). Briefly, each file containing FASTA  sequences for either VIF, ENV, GAG or NEF were processed for multiple sequence alignment and the output generated in 'phylip' format. These were use as input in 'ggtree' for tree display highlighting the position of the isoalted with selected residue combinations as well as clades. 
+
+```{r trees}
+# load files
+env = seqinr::read.fasta(file = "data/all_seqs/webaln_LosAlamos//HIV1_ALL_2018_vif_PRO.fasta" , seqtype = "AA")
+vif = seqinr::read.fasta(file = "data/all_seqs/webaln_LosAlamos/HIV1_ALL_2018_env_PRO.fasta" , seqtype = "AA")
+gag = seqinr::read.fasta(file = "data/all_seqs/webaln_LosAlamos/HIV1_ALL_2018_gag_PRO.fasta" , seqtype = "AA")
+nef = seqinr::read.fasta(file = "data/all_seqs/webaln_LosAlamos/HIV1_ALL_2018_nef_PRO.fasta" , seqtype = "AA")
+
+# find shared sequences
+shared = intersect(names(env), intersect(names(vif), intersect(names(gag),names(nef))))
+
+# extract shared sequences from each protein group
+shared.all = list(
+  env.shared.all = env[names(env) %in% shared]
+  , gag.shared.all = gag[names(gag) %in% shared]
+  , nef.shared.all = nef[names(nef) %in% shared]
+  , vif.shared.all = vif[names(vif) %in% shared]
+) 
+
+# print sequences to file
+dir.create("data/all_seqs/out/")
+for (i in 1:length(shared.all)) {write.fasta(shared.all[[i]], names(shared.all[[i]]) , paste("data/all_seqs/out/",names(shared.all)[i],"_sharedAll.fasta", sep=""), open = "w", nbchar = 60, as.string = FALSE)}
+```
+
+
+```{bash}
+# use clustalO to build phylogeny trees and output to Newick format (that can be read into ggtree)
+## IMPORTANT: YOU NEED A WORKING VERSION OF CLUSTALO - see http://www.clustal.org/omega/ for a download. Alternatively, use the webserver to generate Newick files. This step takes quite some time. 
+# for i in data/all_seqs/out/*.fasta; do /Users/avp25/bin/miniconda3/bin/clustalo --dealign -i $i -o $i.phylip --outfmt phy --guidetree-out=$i.nwk --force; done
+```
+
+
+```{r}
+# load trees into variables. 
+
+tree.vif.all = read.tree("data/all_seqs/out/vif.shared.all_sharedAll.fasta.nwk")
+tree.gag.all = read.tree("data/all_seqs/out/gag.shared.all_sharedAll.fasta.nwk")
+tree.nef.all = read.tree("data/all_seqs/out/env.shared.all_sharedAll.fasta.nwk")
+tree.env.all = read.tree("data/all_seqs/out/env.shared.all_sharedAll.fasta.nwk")
+
+
+c.red = shared[shared %in% names(all.file)[which(all == "II")]] # most active
+c.orange = shared[shared %in% names(all.file)[which(all %in% c("IR","VI"))]] # intermediate
+c.green = shared[shared %in% names(all.file)[which(all == "VR")]] # inactive
+
+```
+
+A total of **`r length(names(shared.all[[1]]))`** entries are shared across alignments of Env Gag, Nef and Vif. 
+
+```{r residue_trees}
+# prepare data for tree
+grp = list(active     = c.red,
+           intermediate = c.orange,
+           inactive  = c.green,
+           other = shared[ shared %!in% c(c.green,c.red, c.orange)]
+           )
+
+grp.cat4 = list(grp$active, grp$inactive, c(grp$other, grp$intermediate))
+names(grp.cat4) = c("I31.I128", "V31.R128", "other")
+
+tree.list.all = list(tree.vif.all, tree.gag.all, tree.nef.all, tree.env.all)
+names(tree.list.all) = c("Vif","Gag","Nef","Env")
+
+res.tree = groupOTU(ggtree(tree.list.all[[1]], branch.length='none', layout = 'circular'), grp.cat4, 'Species') +
+  aes(color=Species) +
+     scale_color_manual(values=c("red", "grey","blue")) +
+     theme(legend.title = element_blank()
+            , legend.position="bottom"
+           # , plot.title = element_text(hjust = 0.5)
+           )
+
+res.tree
+
+```
+
+There are `r length(tree.list.all$Vif$tip.label)` tips in each tree.
+
+
+We can compare the phylogenetic distribution of residues with that of clades in the tree. 
+
+```{r residue_clades}
+# prepare data for tree. indicate which sequences correspond to each clade.
+grp = list(clade.a = shared[grep("^A", shared)]
+           , clade.b = shared[grep("^B", shared)]
+           , clade.c = shared[grep("^C", shared)]
+)
+# list all other sequences under "other"
+grp$other = shared[shared %!in% c(grp$clade.a,grp$clade.b, grp$clade.c)]
+
+names(grp) = c("A", "B", "C", "other")
+
+clade.tree = groupOTU(ggtree(tree.list.all[[1]], branch.length='none', layout = 'circular'), grp, 'Species') +
+  aes(color=Species) +
+  scale_color_manual(values=c(viridis(9, option = "A")[c(2,5,8)],"grey")) +
+      theme(legend.title = element_blank()
+             , legend.position="bottom"
+  #          # , plot.title = element_text(hjust = 0.5)
+            )
+clade.tree
+
+```
+
+```{r wrap_up}
+dir.create("Rdata")
+save.image("RData/All_clusters.RData")
+sessionInfo()
+```
+
